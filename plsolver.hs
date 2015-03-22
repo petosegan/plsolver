@@ -1,13 +1,19 @@
 import Data.List
 
-data Symbol = SymbolBool Bool | SymbolString String deriving (Eq, Show)
+data Symbol = SymbolBool Bool | SymbolString String deriving (Eq)
+
+instance Show Symbol where
+	show = renderSymbol
 
 renderSymbol :: Symbol -> String
 renderSymbol (SymbolBool True) = "True"
 renderSymbol (SymbolBool False) = "False"
 renderSymbol (SymbolString s) = id s
 
-data Sentence = AtomicSentence Symbol | NotSentence Sentence | AndSentence Sentence Sentence| OrSentence Sentence Sentence | ImplySentence Sentence Sentence | IffSentence Sentence Sentence deriving (Show)
+data Sentence = AtomicSentence Symbol | NotSentence Sentence | AndSentence Sentence Sentence| OrSentence Sentence Sentence | ImplySentence Sentence Sentence | IffSentence Sentence Sentence deriving (Eq)
+
+instance Show Sentence where
+	show = renderSentence
 
 renderSentence :: Sentence -> String
 renderSentence (AtomicSentence sym) = renderSymbol sym
