@@ -10,13 +10,21 @@ renderSymbol (SymbolBool True) = "True"
 renderSymbol (SymbolBool False) = "False"
 renderSymbol (SymbolString s) = id s
 
-data Sentence = AtomicSentence Symbol | NotSentence Sentence | AndSentence Sentence Sentence| OrSentence Sentence Sentence | ImplySentence Sentence Sentence | IffSentence Sentence Sentence deriving (Eq)
+data Sentence a = AtomicSentence a | NotSentence (Sentence a) | AndSentence (Sentence a) (Sentence a)| OrSentence (Sentence a) (Sentence a) | ImplySentence (Sentence a) (Sentence a) | IffSentence (Sentence a) (Sentence a) deriving (Eq)
 
-instance Show Sentence where
+instance (Show a) =>Show (Sentence a) where
 	show = renderSentence
 
-renderSentence :: Sentence -> String
-renderSentence (AtomicSentence sym) = renderSymbol sym
+instance Functor (Sentence) where
+	fmap f (AtomicSentence ss) = AtomicSentence (f ss)
+	fmap f (NotSentence ss) = NotSentence (fmap f ss)
+	fmap f (ImplySentence s1 s2) = ImplySentence (fmap f s1) (fmap f s2)
+	fmap f (IffSentence s1 s2) = IffSentence (fmap f s1) (fmap f s2)
+	fmap f (AndSentence s1 s2) = AndSentence (fmap f s1) (fmap f s2)
+	fmap f (OrSentence s1 s2) = OrSentence (fmap f s1) (fmap f s2)
+
+renderSentence :: (Show a) => Sentence a -> String
+renderSentence (AtomicSentence sym) = show sym
 renderSentence (NotSentence s1) = concat ["NOT ", renderSentence s1]
 renderSentence (AndSentence s1 s2) = concat ["(", renderSentence s1, " AND ", renderSentence s2, ")"]
 renderSentence (OrSentence s1 s2) = concat ["(",renderSentence s1, " OR ", renderSentence s2, ")"]
@@ -25,11 +33,11 @@ renderSentence (IffSentence s1 s2) = concat ["(",renderSentence s1, " <=> ", ren
 
 type Model = [(Symbol, Bool)]
 
-tt_entails :: Sentence -> Sentence -> Bool
+tt_entails :: Sentence Symbol -> Sentence Symbol -> Bool
 tt_entails kb alpha = tt_check_all kb alpha symbols []
     where symbols = union (extract_symbols kb) (extract_symbols alpha)
 
-extract_symbols :: Sentence -> [Symbol]
+extract_symbols :: Sentence Symbol -> [Symbol]
 extract_symbols (AtomicSentence sym) = [sym]
 extract_symbols (NotSentence s1) = extract_symbols s1
 extract_symbols (AndSentence s1 s2) = union (extract_symbols s1) (extract_symbols s2)
@@ -37,7 +45,7 @@ extract_symbols (OrSentence s1 s2) = union (extract_symbols s1) (extract_symbols
 extract_symbols (ImplySentence s1 s2) = union (extract_symbols s1) (extract_symbols s2)
 extract_symbols (IffSentence s1 s2) = union (extract_symbols s1) (extract_symbols s2)
 
-tt_check_all :: Sentence -> Sentence -> [Symbol] -> Model -> Bool
+tt_check_all :: Sentence Symbol -> Sentence Symbol -> [Symbol] -> Model -> Bool
 tt_check_all kb alpha symbols model = if null symbols
 					 then if pl_true kb model
 						 then pl_true alpha model
@@ -48,7 +56,7 @@ tt_check_all kb alpha symbols model = if null symbols
 					       model_p_false = ((p, False):model)
 
 
-pl_true :: Sentence -> Model -> Bool
+pl_true :: Sentence Symbol -> Model -> Bool
 pl_true (AndSentence s1 s2) model = pl_true s1 model && pl_true s2 model
 pl_true (OrSentence s1 s2) model = pl_true s1 model || pl_true s2 model
 pl_true (ImplySentence s1 s2) model = not (pl_true s1 model && not (pl_true s2 model))
@@ -58,10 +66,10 @@ pl_true (AtomicSentence s1) model = case (find (\x -> fst x == s1) model) of
 						 Just value -> snd value
 						 Nothing -> False
 
-cnf_convert :: Sentence -> Sentence
+cnf_convert :: Sentence Symbol -> Sentence Symbol
 cnf_convert ss = or_distribute(not_pushdown(imply_remove(iff_remove(ss))))
 
-iff_remove :: Sentence -> Sentence
+iff_remove :: Sentence Symbol -> Sentence Symbol
 iff_remove (IffSentence s1 s2) = AndSentence (ImplySentence s1ir s2ir) (ImplySentence s2ir s1ir)
     where s1ir = iff_remove s1
 	  s2ir = iff_remove s2
@@ -71,14 +79,14 @@ iff_remove (OrSentence s1 s2) = OrSentence (iff_remove s1) (iff_remove s2)
 iff_remove (NotSentence s1) = NotSentence (iff_remove s1)
 iff_remove (AtomicSentence s1) = AtomicSentence s1
 
-imply_remove :: Sentence -> Sentence
+imply_remove :: Sentence Symbol -> Sentence Symbol
 imply_remove (ImplySentence s1 s2) = OrSentence (NotSentence (imply_remove s1)) (imply_remove s2)
 imply_remove (AndSentence s1 s2) = AndSentence (imply_remove s1) (imply_remove s2)
 imply_remove (OrSentence s1 s2) = OrSentence (imply_remove s1) (imply_remove s2)
 imply_remove (NotSentence s1) = NotSentence (imply_remove s1)
 imply_remove (AtomicSentence s1) = AtomicSentence s1
 
-not_pushdown :: Sentence -> Sentence
+not_pushdown :: Sentence Symbol -> Sentence Symbol
 not_pushdown (NotSentence (NotSentence s1)) = not_pushdown s1
 not_pushdown (NotSentence (AndSentence s1 s2)) = not_pushdown (OrSentence (NotSentence s1) (NotSentence s2))
 not_pushdown (NotSentence (OrSentence s1 s2)) = not_pushdown (AndSentence (NotSentence s1) (NotSentence s2))
@@ -87,7 +95,7 @@ not_pushdown (AndSentence s1 s2) = AndSentence (not_pushdown s1) (not_pushdown s
 not_pushdown (OrSentence s1 s2) = OrSentence (not_pushdown s1) (not_pushdown s2)
 not_pushdown (AtomicSentence s1) = AtomicSentence s1
 
-or_distribute :: Sentence -> Sentence
+or_distribute :: Sentence Symbol -> Sentence Symbol
 or_distribute (OrSentence s1 (AndSentence s2 s3)) = or_distribute (AndSentence (OrSentence s1 s2) (OrSentence s1 s3))
 or_distribute (OrSentence (AndSentence s1 s2) s3) = or_distribute (AndSentence (OrSentence s1 s3) (OrSentence s2 s3))
 or_distribute ss@(OrSentence s1 s2) = if is_clause ss
@@ -99,19 +107,35 @@ or_distribute ss@(OrSentence s1 s2) = if is_clause ss
 or_distribute (AndSentence s1 s2) = AndSentence (or_distribute s1) (or_distribute s2)
 or_distribute ss = ss
 
-is_literal :: Sentence -> Bool
+is_literal :: Sentence Symbol -> Bool
 is_literal ss@(AtomicSentence _) = True
 is_literal ss@(NotSentence (AtomicSentence _)) = True
 is_literal ss = False
 
-is_clause :: Sentence -> Bool
+is_clause :: Sentence Symbol -> Bool
 is_clause (OrSentence s1 s2) = (is_clause s1) && (is_clause s2)
 is_clause ss = is_literal ss
 
-is_cnf :: Sentence -> Bool
+is_cnf :: Sentence Symbol -> Bool
 is_cnf (AndSentence s1 s2) = (is_cnf s1) && (is_cnf s2)
 is_cnf ss@(OrSentence _ _) = is_clause ss
 is_cnf ss = is_literal ss
+
+type Literal = Sentence Symbol
+type Clause = [Literal]
+type CNFSentence = [Clause]
+
+cnf_form :: Sentence Symbol-> CNFSentence
+cnf_form (AndSentence s1 s2) = union (cnf_form s1) (cnf_form s2)
+cnf_form ss = if is_clause ss
+		 then [clausify ss]
+		 else []
+
+clausify :: Sentence Symbol -> Clause
+clausify (OrSentence s1 s2) = union (clausify s1) (clausify s2)
+clausify ss = if is_literal ss
+		   then [ss]
+		   else []
 
 p11 = SymbolString "P11"
 p12 = SymbolString "P12"
