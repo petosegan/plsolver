@@ -121,14 +121,13 @@ is_cnf (AndSentence s1 s2) = (is_cnf s1) && (is_cnf s2)
 is_cnf ss@(OrSentence _ _) = is_clause ss
 is_cnf ss = is_literal ss
 
-type Literal = Sentence Symbol
-type Clause = [Literal]
+type Clause = [Sentence Symbol]
 type CNFSentence = [Clause]
 
 cnf_form :: Sentence Symbol-> CNFSentence
-cnf_form (AndSentence s1 s2) = union (cnf_form s1) (cnf_form s2)
+cnf_form (AndSentence s1 s2) = nub (union (cnf_form s1) (cnf_form s2))
 cnf_form ss = if is_clause ss
-		 then [clausify ss]
+		 then nub [clausify ss]
 		 else []
 
 clausify :: Sentence Symbol -> Clause
@@ -136,6 +135,43 @@ clausify (OrSentence s1 s2) = union (clausify s1) (clausify s2)
 clausify ss = if is_literal ss
 		   then [ss]
 		   else []
+
+clause_invert :: Clause -> Clause
+clause_invert [] = []
+clause_invert ((NotSentence s1):rest) = (s1:(clause_invert rest))
+clause_invert (ss@(AtomicSentence _):rest) = ((NotSentence ss):(clause_invert rest))
+
+is_tautology :: Clause -> Bool
+is_tautology cc = not (null (intersect cc (clause_invert cc)))
+
+
+pl_resolution :: Sentence Symbol-> Sentence Symbol-> Bool
+pl_resolution kb alpha = pl_res_step this_cnf
+    where
+        this_cnf = cnf_form (cnf_convert (AndSentence kb (NotSentence alpha)))
+
+pl_res_step :: CNFSentence -> Bool
+pl_res_step clauses = if elem [] resolvents
+			   then True
+			  else
+			 if (intersect resolvents clauses) == resolvents
+			   then False
+			  else
+			 pl_res_step (union resolvents clauses)
+		where
+		    cpairs = [(x,y) | x<-clauses, y<-clauses]
+		    resolvents = pl_resolve cpairs
+
+
+pl_resolve :: [(Clause, Clause)] -> [Clause]
+pl_resolve c_pairs = nub (filter (not . is_tautology) (map pl_resolve_single c_pairs))
+
+pl_resolve_single :: (Clause, Clause) -> Clause
+pl_resolve_single (c1, c2) = nub $ union (c1 \\ (intersect c1 (clause_invert c2))) (c2 \\ (intersect c2 (clause_invert c1)))
+
+dummy_sentence = AtomicSentence (SymbolString "Dummy")
+taut_clause = [dummy_sentence, (NotSentence dummy_sentence)]
+
 
 p11 = SymbolString "P11"
 p12 = SymbolString "P12"
