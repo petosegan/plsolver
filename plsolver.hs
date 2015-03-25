@@ -16,7 +16,7 @@ renderSymbol (SymbolBool True) = "True"
 renderSymbol (SymbolBool False) = "False"
 renderSymbol (SymbolString s) = id s
 
-data Sentence = AtomicSentence Symbol | NotSentence Sentence | AndSentence Sentence Sentence| OrSentence Sentence Sentence| ImplySentence Sentence Sentence| IffSentence Sentence Sentence deriving (Eq)
+data Sentence = AtomicSentence Symbol | NotSentence Sentence | AndSentence Sentence Sentence| OrSentence Sentence Sentence| ImplySentence Sentence Sentence| IffSentence Sentence Sentence deriving (Eq, Ord)
 
 instance Show Sentence where
 	show = renderSentence
@@ -119,28 +119,30 @@ is_cnf (AndSentence s1 s2) = (is_cnf s1) && (is_cnf s2)
 is_cnf ss@(OrSentence _ _) = is_clause ss
 is_cnf ss = is_literal ss
 
-type Clause = [Sentence]
-type CNFSentence = [Clause]
+type Clause = Set.Set Sentence
+type CNFSentence = Set.Set Clause
 
 cnf_form :: Sentence -> CNFSentence
-cnf_form (AndSentence s1 s2) = nub (union (cnf_form s1) (cnf_form s2))
+cnf_form (AndSentence s1 s2) = Set.union (cnf_form s1) (cnf_form s2)
 cnf_form ss = if is_clause ss
-		 then nub [clausify ss]
-		 else []
+		 then Set.singleton (clausify ss)
+		 else Set.empty
 
 clausify :: Sentence -> Clause
-clausify (OrSentence s1 s2) = union (clausify s1) (clausify s2)
+clausify (OrSentence s1 s2) = Set.union (clausify s1) (clausify s2)
 clausify ss = if is_literal ss
-		   then [ss]
-		   else []
+		   then Set.singleton ss
+		   else Set.empty
 
 clause_invert :: Clause -> Clause
-clause_invert [] = []
-clause_invert ((NotSentence s1):rest) = (s1:(clause_invert rest))
-clause_invert (ss@(AtomicSentence _):rest) = ((NotSentence ss):(clause_invert rest))
+clause_invert = Set.map literal_negate
+
+literal_negate :: Sentence -> Sentence
+literal_negate (NotSentence ss) = ss
+literal_negate (AtomicSentence ss) = NotSentence (AtomicSentence ss)
 
 is_tautology :: Clause -> Bool
-is_tautology cc = not (null (intersect cc (clause_invert cc)))
+is_tautology cc = not (Set.null (Set.intersection cc (clause_invert cc)))
 
 
 pl_resolution :: Sentence -> Sentence -> Bool
@@ -149,26 +151,37 @@ pl_resolution kb alpha = pl_res_step this_cnf
         this_cnf = cnf_form (cnf_convert (AndSentence kb (NotSentence alpha)))
 
 pl_res_step :: CNFSentence -> Bool
-pl_res_step clauses = if elem [] resolvents
+pl_res_step clauses = if Set.member Set.empty resolvents
 			   then True
 			  else
-			 if (intersect resolvents clauses) == resolvents
+			 if Set.isSubsetOf resolvents clauses
 			   then False
 			  else
-			 pl_res_step (union resolvents clauses)
+			 pl_res_step (Set.union resolvents clauses)
 		where
-		    cpairs = [(x,y) | x<-clauses, y<-clauses]
-		    resolvents = pl_resolve cpairs
+		    resolvents = pl_resolve clauses
 
 
-pl_resolve :: [(Clause, Clause)] -> [Clause]
-pl_resolve c_pairs = nub (filter (not . is_tautology) (map pl_resolve_single c_pairs))
+clause_pairs :: CNFSentence -> Set.Set (Clause,Clause)
+clause_pairs clauses = union_all (Set.map (pair_with clauses) clauses) 
+    where
+        pair_with clauses elt = Set.map ((,) elt) clauses
+        union_all = Set.foldr Set.union Set.empty
+
+pl_resolve :: CNFSentence -> Set.Set Clause
+pl_resolve clauses = Set.filter (not . is_tautology) (Set.map pl_resolve_single c_pairs)
+    where
+        c_pairs = clause_pairs clauses
 
 pl_resolve_single :: (Clause, Clause) -> Clause
-pl_resolve_single (c1, c2) = nub $ union (c1 \\ (intersect c1 (clause_invert c2))) (c2 \\ (intersect c2 (clause_invert c1)))
+pl_resolve_single (c1, c2) =  if Set.null $ Set.intersection c1 (clause_invert c2)
+				 then taut_clause
+				 else if (Set.size (Set.intersection c1 (clause_invert c2)) >= 2)
+				 then taut_clause
+				 else Set.union (Set.difference c1 (Set.intersection c1 (clause_invert c2))) (Set.difference c2 (Set.intersection c2 (clause_invert c1)))
 
 dummy_sentence = AtomicSentence (SymbolString "Dummy")
-taut_clause = [dummy_sentence, (NotSentence dummy_sentence)]
+taut_clause = Set.fromList [dummy_sentence, (NotSentence dummy_sentence)]
 
 
 p11 = SymbolString "P11"
@@ -203,3 +216,11 @@ ortest2 = OrSentence ortest ortest
 
 clausetest = (OrSentence (OrSentence p11s p12s) p31s)
 clausetest2 = (OrSentence (AndSentence p11s p12s) (OrSentence p11s p12s))
+
+kb_cnf = cnf_form (cnf_convert kb)
+
+alpha = r1
+
+cnftest = cnf_form (cnf_convert (AndSentence kb (NotSentence alpha)))
+
+kb_debug = cnf_form (cnf_convert r2)
